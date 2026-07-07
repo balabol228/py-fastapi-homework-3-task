@@ -359,11 +359,12 @@ async def login(
         )
 
         if hasattr(RefreshTokenModel, "create"):
+            days_to_expire = getattr(settings, "LOGIN_TIME_DAYS", 7)
             token_instance = RefreshTokenModel.create(
                 token=refresh_token,
-                user_id=cast(int, user.id)
+                user_id=cast(int, user.id),
+                days_valid=days_to_expire
             )
-            token_instance.expires_at = expires_at
             db.add(token_instance)
             await db.commit()
         else:
