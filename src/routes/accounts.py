@@ -67,7 +67,7 @@ async def register_user(
         hashed_pwd = hash_password(user_data.password)
         new_user = UserModel(
             email=user_data.email,
-            hashed_password=hashed_pwd,
+            _hashed_password=hashed_pwd,
             is_active=False,
             group_id=group_id
         )
@@ -237,7 +237,7 @@ async def complete_password_reset(
         )
 
     try:
-        user.hashed_password = hash_password(data.password)
+        user._hashed_password = hash_password(data.password)
         await db.delete(token_record)
         await db.commit()
         return {"message": "Password reset successfully."}
@@ -265,7 +265,7 @@ async def login(
     user = user_res.scalar_one_or_none()
 
     if not user or not verify_password(
-        data.password, user.hashed_password
+        data.password, user._hashed_password
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
