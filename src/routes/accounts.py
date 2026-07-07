@@ -51,7 +51,10 @@ async def register_user(
         if result.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"A user with this email {user_data.email} already exists."
+                detail=(
+                    f"A user with this email {user_data.email} "
+                    "already exists."
+                )
             )
 
         group_query = select(UserGroupModel).where(
@@ -261,7 +264,9 @@ async def login(
     user_res = await db.execute(user_query)
     user = user_res.scalar_one_or_none()
 
-    if not user or not verify_password(data.password, user.hashed_password):
+    if not user or not verify_password(
+        data.password, user.hashed_password
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password."
@@ -278,7 +283,9 @@ async def login(
         refresh_token = jwt_manager.create_refresh_token(user_id=user.id)
 
         days_to_expire = getattr(settings, "LOGIN_TIME_DAYS", 7)
-        expires_at = datetime.now(timezone.utc) + timedelta(days=days_to_expire)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            days=days_to_expire
+        )
 
         if hasattr(RefreshTokenModel, "create"):
             await RefreshTokenModel.create(
@@ -325,7 +332,9 @@ async def refresh_access_token(
     jwt_manager: JWTAuthManagerInterface = Depends(get_jwt_auth_manager)
 ):
     try:
-        decoded_payload = jwt_manager.decode_refresh_token(data.refresh_token)
+        decoded_payload = jwt_manager.decode_refresh_token(
+            data.refresh_token
+        )
         user_id = decoded_payload.get("user_id")
     except (BaseSecurityError, Exception):
         raise HTTPException(
