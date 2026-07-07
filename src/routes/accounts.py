@@ -359,12 +359,13 @@ async def login(
         )
 
         if hasattr(RefreshTokenModel, "create"):
-            await RefreshTokenModel.create(
-                db=db,
+            token_instance = RefreshTokenModel.create(
                 token=refresh_token,
                 user_id=cast(int, user.id),
                 expires_at=expires_at
             )
+            db.add(token_instance)
+            await db.commit()
         else:
             refresh_record = RefreshTokenModel(
                 token=refresh_token,
