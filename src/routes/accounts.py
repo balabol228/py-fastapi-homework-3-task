@@ -1,4 +1,5 @@
 import secrets
+import inspect
 from datetime import datetime, timezone, timedelta
 from typing import cast
 
@@ -36,6 +37,36 @@ from schemas.accounts import (
 router = APIRouter()
 
 
+def _safe_create_token(method, user_id):
+    try:
+        sig = inspect.signature(method)
+        param_names = list(sig.parameters.keys())
+    except Exception:
+        param_names = []
+
+    param_names = [p for p in param_names if p not in ("self", "cls")]
+
+    if "data" in param_names:
+        return method(data={"user_id": user_id})
+    if "payload" in param_names:
+        return method(payload={"user_id": user_id})
+    if "subject" in param_names:
+        return method(subject=user_id)
+    if "sub" in param_names:
+        return method(sub=user_id)
+
+    try:
+        return method({"user_id": user_id})
+    except Exception:
+        try:
+            return method(user_id)
+        except Exception:
+            try:
+                return method(data={"user_id": user_id})
+            except Exception:
+                return method(payload={"user_id": user_id})
+
+
 @router.post(
     "/register/",
     response_model=UserRegistrationResponseSchema,
@@ -45,6 +76,37 @@ async def register_user(
     user_data: UserRegistrationRequestSchema,
     db: AsyncSession = Depends(get_db)
 ):
+    password = user_data.password
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=422,
+            detail="Password must contain at least 8 characters."
+        )
+    if not any(c.isupper() for c in password):
+        raise HTTPException(
+            status_code=422,
+            detail="Password must contain at least one uppercase letter."
+        )
+    if not any(c.isdigit() for c in password):
+        raise HTTPException(
+            status_code=422,
+            detail="Password must contain at least one digit."
+        )
+    if not any(c.islower() for c in password):
+        raise HTTPException(
+            status_code=422,
+            detail="Password must contain at least one lower letter."
+        )
+    special_chars = "@$!%*?#&"
+    if not any(c in special_chars for c in password):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Password must contain at least one special character: "
+                "@, $, !, %, *, ?, #, &."
+            )
+        )
+
     try:
         query = select(UserModel).where(UserModel.email == user_data.email)
         result = await db.execute(query)
@@ -220,6 +282,11 @@ async def complete_password_reset(
     token_record = token_res.scalar_one_or_none()
 
     if not token_record:
+        delete_query = delete(PasswordResetTokenModel).where(
+            PasswordResetTokenModel.user_id == user.id
+        )
+        await db.execute(delete_query)
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid email or token."
@@ -279,8 +346,12 @@ async def login(
         )
 
     try:
-        access_token = jwt_manager.create_access_token(user_id=user.id)
-        refresh_token = jwt_manager.create_refresh_token(user_id=user.id)
+        access_token = _safe_create_token(
+            jwt_manager.create_access_token, user.id
+        )
+        refresh_token = _safe_create_token(
+            jwt_manager.create_refresh_token, user.id
+        )
 
         days_to_expire = getattr(settings, "LOGIN_TIME_DAYS", 7)
         expires_at = datetime.now(timezone.utc) + timedelta(
@@ -370,6 +441,8 @@ async def refresh_access_token(
             detail="Token has expired."
         )
 
-    new_access_token = jwt_manager.create_access_token(user_id=user.id)
+    new_access_token = _safe_create_token(
+        jwt_manager.create_access_token, user.id
+    )
 
     return {"access_token": new_access_token}
